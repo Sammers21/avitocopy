@@ -42,7 +42,7 @@ CREATE TABLE AvitoUser (
 CREATE TABLE Auction (
   id            SERIAL,
   desription    TEXT,
-  creation_date DATE,
+  creation_date TIMESTAMP,
   seller_id     INTEGER,
   status        AUCTION_STATUS,
   currency      TEXT,
@@ -172,9 +172,11 @@ DECLARE sale_amount DECIMAL;
 BEGIN
 
   sale_amount :=(
-    SELECT amount FROM
-      Sale JOIN bid ON Sale.user_id = Bid.user_id AND Sale.auction_id = Bid.auction_id
-      WHERE Sale.id = new.sale_id
+    SELECT amount
+    FROM
+      Sale
+      JOIN bid ON Sale.user_id = Bid.user_id AND Sale.auction_id = Bid.auction_id
+    WHERE Sale.id = new.sale_id
   );
 
   UPDATE Wallet
@@ -220,11 +222,6 @@ CREATE TRIGGER user_wallets_auto_creator
 AFTER INSERT ON AvitoUser
 FOR EACH ROW EXECUTE PROCEDURE new_user_wallets_creation();
 
-
-
--- gen
-
-
 INSERT INTO currency VALUES ('USD');
 INSERT INTO currency VALUES ('RUB');
 INSERT INTO currency VALUES ('BYN');
@@ -233,18 +230,25 @@ INSERT INTO avitouser VALUES (DEFAULT, 'iliagulkov@sobaka.ru', 'kek', 'lol', '20
 INSERT INTO avitouser VALUES (DEFAULT, 'drankov@sobaka.ru', 'kek', 'lol', '2002-11-05', 'dranik');
 INSERT INTO avitouser VALUES (DEFAULT, 'kashina@sobaka.ru', 'kek', 'lol', '2017-10-05', 'kasha');
 
-INSERT INTO auction VALUES (DEFAULT, 'каша с маслом', '2017-12-31', 3, 'Open', 'USD', 15);
+INSERT INTO auction VALUES (DEFAULT, 'каша с маслом', '2017-12-31', 3, 'Open', 'RUB', 15);
 INSERT INTO auction VALUES (DEFAULT, 'макбук 12 года ', '2017-12-31', 1, 'Open', 'USD', 20);
 INSERT INTO auction VALUES (DEFAULT, 'старый макбук из яндекса', '2017-11-20', 2, 'Closed', 'USD', 500);
 
 INSERT INTO bid VALUES (1, 2, 600);
+INSERT INTO bid VALUES (1, 1, 228);
 INSERT INTO bid VALUES (2, 2, 700);
 INSERT INTO bid VALUES (3, 2, 800);
 INSERT INTO bid VALUES (1, 3, 1000000);
 
-INSERT INTO sale VALUES (DEFAULT, 'Payed', 1, 3);
+INSERT INTO sale VALUES (DEFAULT, 'Payed', 1, 1);
 
 INSERT INTO feedback VALUES (DEFAULT, 2, 3, 3, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 2, 3, 7, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 1, 3, 8, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 1, 3, 1, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 1, 3, 1, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 1, 3, 2, 'каша была невкусная');
+INSERT INTO feedback VALUES (DEFAULT, 3, 1, 10, 'каша была вкусная');
 
 INSERT INTO exchangerate VALUES ('RUB', 'BYN', '2017-09-28 01:00:11', 30);
 INSERT INTO exchangerate VALUES ('RUB', 'BYN', '2017-09-28 01:20:11', 40);

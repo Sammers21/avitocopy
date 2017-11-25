@@ -1,0 +1,1 @@
+INSERT INTO auction VALUES (DEFAULT, 'description', current_timestamp, 3, 'Open', 'RUB', 15);
