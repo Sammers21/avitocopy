@@ -1,0 +1,1 @@
+SELECT close_auction(1);

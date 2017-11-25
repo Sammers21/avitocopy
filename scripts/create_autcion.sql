@@ -1,1 +1,1 @@
-INSERT INTO auction VALUES (DEFAULT, 'description', current_timestamp, 3, 'Open', 'RUB', 15);
+INSERT INTO auction VALUES (DEFAULT, 'description', current_timestamp, 3, 'Open', 'RUB', 15, current_timestamp + INTERVAL '1 day';

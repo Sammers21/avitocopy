@@ -9,10 +9,10 @@ DROP TABLE IF EXISTS Wallet CASCADE;
 DROP TABLE IF EXISTS TreasuryAccount CASCADE;
 DROP TABLE IF EXISTS SaleTx CASCADE;
 DROP TABLE IF EXISTS SystemTx CASCADE;
-
 DROP TYPE IF EXISTS AUCTION_STATUS CASCADE;
 DROP TYPE IF EXISTS SALE_STATUS CASCADE;
-
+DROP TABLE IF EXISTS CLOSING_DATA CASCADE;
+DROP FUNCTION IF EXISTS close_auction( INTEGER );
 CREATE TYPE AUCTION_STATUS AS ENUM (
   'Open',
   'Closed'
@@ -47,27 +47,27 @@ CREATE TABLE Auction (
   status        AUCTION_STATUS,
   currency      TEXT,
   start_price   DECIMAL,
+  end_date      TIMESTAMP,
   FOREIGN KEY (seller_id) REFERENCES AvitoUser (id),
   FOREIGN KEY (currency) REFERENCES Currency (id),
   PRIMARY KEY (id)
 );
 
 CREATE TABLE Bid (
+  id         SERIAL,
   user_id    INTEGER,
   auction_id INTEGER,
   amount     DECIMAL,
   FOREIGN KEY (auction_id) REFERENCES Auction (id),
   FOREIGN KEY (user_id) REFERENCES AvitoUser (id),
-  PRIMARY KEY (user_id, auction_id)
+  PRIMARY KEY (id)
 );
-
 
 CREATE TABLE Sale (
   id         SERIAL,
   status     SALE_STATUS,
   user_id    INTEGER,
   auction_id INTEGER,
-  FOREIGN KEY (user_id, auction_id) REFERENCES Bid (user_id, auction_id),
   FOREIGN KEY (auction_id) REFERENCES Auction (id),
   PRIMARY KEY (id)
 );
@@ -134,6 +134,38 @@ CREATE TABLE SystemTx (
   FOREIGN KEY (user_id, currency_id) REFERENCES Wallet (user_id, currency_id),
   PRIMARY KEY (id)
 );
+
+
+/*
+  Когда в SysTx прилетает транзакция, то обновляется также и наши колеьки,
+  и кошельки пользоватлелей
+ */
+CREATE OR REPLACE FUNCTION new_bid_insertion()
+  RETURNS TRIGGER AS
+$BODY$
+BEGIN
+
+  IF (SELECT amount
+      FROM Wallet
+      WHERE Wallet.user_id = new.user_id
+            AND Wallet.currency_id = (SELECT currency
+                                      FROM Auction
+                                      WHERE Auction.id = new.auction_id)) >= new.amount
+  THEN
+    RETURN new;
+  ELSE
+    RETURN NULL;
+  END IF;
+
+  RETURN NEW;
+END;
+$BODY$
+LANGUAGE plpgsql VOLATILE;
+
+CREATE TRIGGER new_big_trigger
+BEFORE INSERT ON Bid
+FOR EACH ROW EXECUTE PROCEDURE new_bid_insertion();
+
 
 /*
   Когда в SysTx прилетает транзакция, то обновляется также и наши колеьки,
@@ -218,27 +250,89 @@ END;
 $BODY$
 LANGUAGE plpgsql VOLATILE;
 
+CREATE TABLE closing_data (
+  winner_id  INT,
+  win_amount DECIMAL,
+  currency   TEXT,
+  seller_id  INT
+);
+
+
+CREATE OR REPLACE FUNCTION close_auction(auc_id INT)
+  RETURNS INT
+AS
+$BODY$
+
+DECLARE winner_id   INT;
+        win_amount  DECIMAL;
+        currency_s  TEXT;
+        seller_id_s INT;
+
+BEGIN
+
+  UPDATE auction
+  SET status = 'Closed'
+  WHERE auction.id = 1;
+
+
+  SELECT
+    user_id,
+    bid.amount,
+    currency,
+    seller_id
+  INTO winner_id, win_amount, currency_s, seller_id_s
+  FROM auction
+    JOIN bid ON auction.id = bid.auction_id
+  WHERE auction.id = $1
+  ORDER BY bid.amount DESC
+  LIMIT 1;
+
+  INSERT INTO Sale VALUES (default, 'Payed', winner_id, $1);
+
+  INSERT INTO SaleTx VALUES (DEFAULT,
+                             winner_id,
+                             seller_id_s,
+                             currency_s,
+                             currval(pg_get_serial_sequence('Sale', 'id')));
+  RETURN 1;
+END;
+$BODY$
+LANGUAGE plpgsql VOLATILE;
+
 CREATE TRIGGER user_wallets_auto_creator
 AFTER INSERT ON AvitoUser
 FOR EACH ROW EXECUTE PROCEDURE new_user_wallets_creation();
+
 
 INSERT INTO currency VALUES ('USD');
 INSERT INTO currency VALUES ('RUB');
 INSERT INTO currency VALUES ('BYN');
 
+INSERT INTO treasuryaccount VALUES (DEFAULT, 'BYN', 0);
+INSERT INTO treasuryaccount VALUES (DEFAULT, 'USD', 0);
+INSERT INTO treasuryaccount VALUES (DEFAULT, 'RUB', 0);
+
 INSERT INTO avitouser VALUES (DEFAULT, 'iliagulkov@sobaka.ru', 'kek', 'lol', '2001-10-05', 'huilo');
 INSERT INTO avitouser VALUES (DEFAULT, 'drankov@sobaka.ru', 'kek', 'lol', '2002-11-05', 'dranik');
 INSERT INTO avitouser VALUES (DEFAULT, 'kashina@sobaka.ru', 'kek', 'lol', '2017-10-05', 'kasha');
 
-INSERT INTO auction VALUES (DEFAULT, 'каша с маслом', '2017-12-31', 3, 'Open', 'RUB', 15);
-INSERT INTO auction VALUES (DEFAULT, 'макбук 12 года ', '2017-12-31', 1, 'Open', 'USD', 20);
-INSERT INTO auction VALUES (DEFAULT, 'старый макбук из яндекса', '2017-11-20', 2, 'Closed', 'USD', 500);
+INSERT INTO auction
+VALUES (DEFAULT, 'каша с маслом', '2017-12-31', 3, 'Open', 'RUB', 15, TIMESTAMP '2018-01-01' + INTERVAL '1 day');
+INSERT INTO auction VALUES (DEFAULT, 'макбук 12 года ', '2017-12-31', 1, 'Open', 'USD', 20, '2018-01-03');
+INSERT INTO auction VALUES (DEFAULT, 'старый макбук из яндекса', '2017-11-20', 2, 'Closed', 'USD', 500, '2018-01-04');
 
-INSERT INTO bid VALUES (1, 2, 600);
-INSERT INTO bid VALUES (1, 1, 228);
-INSERT INTO bid VALUES (2, 2, 700);
-INSERT INTO bid VALUES (3, 2, 800);
-INSERT INTO bid VALUES (1, 3, 1000000);
+INSERT INTO SystemTx VALUES (DEFAULT, 2, 1, 'USD', 10000);
+INSERT INTO SystemTx VALUES (DEFAULT, 2, 2, 'USD', 10000);
+INSERT INTO SystemTx VALUES (DEFAULT, 2, 3, 'USD', 10000);
+INSERT INTO SystemTx VALUES (DEFAULT, 3, 1, 'RUB', 10000);
+INSERT INTO SystemTx VALUES (DEFAULT, 3, 2, 'RUB', 10000);
+INSERT INTO SystemTx VALUES (DEFAULT, 3, 3, 'RUB', 10000);
+
+INSERT INTO bid VALUES (DEFAULT, 1, 2, 600);
+INSERT INTO bid VALUES (DEFAULT, 1, 1, 228);
+INSERT INTO bid VALUES (DEFAULT, 2, 2, 700);
+INSERT INTO bid VALUES (DEFAULT, 3, 2, 800);
+INSERT INTO bid VALUES (DEFAULT, 1, 3, 1000);
 
 INSERT INTO sale VALUES (DEFAULT, 'Payed', 1, 1);
 
@@ -253,10 +347,6 @@ INSERT INTO feedback VALUES (DEFAULT, 3, 1, 10, 'каша была вкусна�
 INSERT INTO exchangerate VALUES ('RUB', 'BYN', '2017-09-28 01:00:11', 30);
 INSERT INTO exchangerate VALUES ('RUB', 'BYN', '2017-09-28 01:20:11', 40);
 INSERT INTO exchangerate VALUES ('RUB', 'BYN', '2017-09-28 01:30:11', 50);
-
-INSERT INTO treasuryaccount VALUES (DEFAULT, 'USD', 0);
-INSERT INTO treasuryaccount VALUES (DEFAULT, 'RUB', 0);
-INSERT INTO treasuryaccount VALUES (DEFAULT, 'BYN', 0);
 
 INSERT INTO systemtx VALUES (DEFAULT, 1, 1, 'USD', 50);
 
